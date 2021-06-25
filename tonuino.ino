@@ -245,6 +245,7 @@
 #include <MFRC522.h>
 #include <DFMiniMp3.h>
 #include <AceButton.h>
+#include <SimpleHOTP.h>
 using namespace ace_button;
 
 // include additional library if ir remote support is enabled
@@ -542,6 +543,114 @@ WS2812 rgbLed(statusLedCount);                                                //
 #if defined LOWVOLTAGE
 Vcc shutdownVoltage(shutdownVoltageCorrection);                               // create Vcc instance
 #endif
+
+bool checkNFC(){
+         mfrc522.MIFARE_UnbrickUidSector(false);  
+         byte bufferATQA[2];
+         byte bufferSize = sizeof(bufferATQA);
+         mfrc522.PICC_WakeupA(bufferATQA, &bufferSize);
+         return true;
+}
+
+
+int a2v(char c)
+{
+    if ((c >= '0') && (c <= '9'))
+    {
+        return c - '0';
+    }
+    if ((c >= 'a') && (c <= 'f'))
+    {
+        return c - 'a' + 10;
+    }
+    else return 0;
+}
+
+char v2a(int c)
+{
+    const char hex[] = "0123456789abcdef";
+    return hex[c];
+}
+
+char *unhexlify(char *hstr)
+{
+    char *bstr = malloc((strlen(hstr) / 2) + 1);
+    char *pbstr = bstr;
+    for (int i = 0; i < strlen(hstr); i += 2)
+    {
+        char c = (a2v(hstr[i]) << 4) + a2v(hstr[i + 1]);
+        if (c == 0) {
+            *pbstr++ = -128;
+        } else {
+            *pbstr++ = c;
+        }
+    }
+    *pbstr++ = '\0';
+    return bstr;
+}
+
+// store on 2 char the Hex represnetation of byte v
+// adds a trailing '\0'
+// so b should point to an array with at least 3 bytes available to contain the representation
+void storeHexRepresentation(char *b, const byte v)
+{
+  if (v <= 0xF) {
+    *b = '0';
+    b++;
+  }
+  itoa(v, b, 16); // http://www.cplusplus.com/reference/cstdlib/itoa/
+}
+
+byte disneyKey(uint8_t keyDigit, byte *NFCbuffer, byte bufferSize) {
+
+    byte mfrc522_uid_uidByte[7] = {};
+
+    //char *nfcToy = "045b9872332d80";
+
+    char *nfcToyy = malloc((2*bufferSize)+1);
+
+    for (byte i = 0; i < 7; i++) storeHexRepresentation(&nfcToyy[2 * i],NFCbuffer[i]);
+
+    // only non capital letters!!!
+    char *pre = "0a14fd0507ff4bcd026ba83f0a3b89a9";
+    char *post = "286329204469736e65792032303133";
+    
+    size_t newlen = strlen(pre) + strlen(nfcToyy) + strlen(post);
+
+    char *input = malloc(newlen+1);
+    
+    strcpy(input, pre);
+    strcat(input, nfcToyy);
+    strcat(input, post);
+    
+    // Convert to binary data
+    char *input_bin = unhexlify(input);
+    
+    free(input);
+    free(nfcToyy);
+    
+    int ml = strlen(input_bin);
+    
+    // Multiply the number of BYTES of the message by 8,
+    // so we get the number of BITS of the message
+    ml *= 8;
+    uint32_t hash[5] = {}; // This will contain the 160-bit Hash
+    SimpleSHA1::generateSHA(input_bin, ml, hash);
+
+    free(input_bin);
+
+    byte keyCode[6];
+      
+    keyCode[0] = hash[0] & 0xFF;    // prepare NFC Disney Key
+    keyCode[1] = (hash[0]>>8) & 0xFF;
+    keyCode[2] = (hash[0]>>16) & 0xFF;
+    keyCode[3] = (hash[0]>>24) & 0xFF;
+    keyCode[4] = hash[1] & 0xFF;
+    keyCode[5] = (hash[1]>>8) & 0xFF;
+
+    keyDigit = keyCode[keyDigit];
+    return keyDigit;
+}
 
 void setup() {
   // things we need to do immediately on startup
@@ -1027,6 +1136,8 @@ void loop() {
 // ################################################################ functions are below this line! ################################################################
 // ################################################################################################################################################################
 
+
+
 // checks all input sources (and populates the global inputEvent variable for ir events)
 void checkForInput() {
   // clear inputEvent
@@ -1409,7 +1520,17 @@ uint8_t readNfcTagData() {
     uint8_t classicBlock = 4;
     uint8_t classicTrailerBlock = 7;
     MFRC522::MIFARE_Key classicKey;
-    for (uint8_t i = 0; i < 6; i++) classicKey.keyByte[i] = 0xFF;
+    //for (uint8_t i = 0; i < 6; i++) classicKey.keyByte[i] = 0xFF;
+
+    //mfrc522.PICC_ReadCardSerial();
+
+    byte bufferKey[6];
+    for (uint8_t i = 0; i < 6; i++) {
+      bufferKey[i] = disneyKey(i,mfrc522.uid.uidByte, mfrc522.uid.size);
+      classicKey.keyByte[i] = bufferKey[i];
+      Serial.print(classicKey.keyByte[i]);
+    }
+
 
     // check if we can authenticate with classicKey
     piccStatus = (MFRC522::StatusCode)mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, classicTrailerBlock, &classicKey, &mfrc522.uid);
@@ -1515,8 +1636,16 @@ uint8_t writeNfcTagData(uint8_t nfcTagWriteBuffer[], uint8_t nfcTagWriteBufferSi
     uint8_t classicBlock = 4;
     uint8_t classicTrailerBlock = 7;
     MFRC522::MIFARE_Key classicKey;
-    for (uint8_t i = 0; i < 6; i++) classicKey.keyByte[i] = 0xFF;
-
+    //for (uint8_t i = 0; i < 6; i++) classicKey.keyByte[i] = 0xFF;
+    
+  
+    byte bufferKey[6];
+    for (uint8_t i = 0; i < 6; i++) {
+      bufferKey[i] = disneyKey(i,mfrc522.uid.uidByte, mfrc522.uid.size);
+      classicKey.keyByte[i] = bufferKey[i];
+      Serial.print(classicKey.keyByte[i]);
+    }
+    
     // check if we can authenticate with classicKey
     piccStatus = (MFRC522::StatusCode)mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, classicTrailerBlock, &classicKey, &mfrc522.uid);
     if (piccStatus == MFRC522::STATUS_OK) {
