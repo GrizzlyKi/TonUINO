@@ -32,6 +32,7 @@ Dies ist meine alternative Firmware für das wundervolle [TonUINO](https://www.v
 - Der aktuell laufende Titel kann dauerhaft wiederholt werden.
 - Speichert die Ordnerverknüpfungen, Abspielmodi etc. auf den NFC Tags/Karten.
 - Unterstützung für MIFARE Classic (Mini, 1K & 4K) Tags/Karten.
+- Unterstützung für Disney Infinity Figuren. Jede Figur muss gelöscht werden, damit sie neu angelernt werden kann! Alle Figuren können auch noch im original Spiel verwendet werden, aber dann werden die Daten von der Tonuino Box überschrieben.
 - Unterstützung für MIFARE Ultralight / Ultralight C Tags/Karten.
 - Unterstützung für NTAG213/215/216 Tags/Karten.
 - Debugausgabe auf der seriellen Konsole.
